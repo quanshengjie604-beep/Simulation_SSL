@@ -1,0 +1,23 @@
+# Track only source/pipeline/model-asset directories.
+*
+
+!.gitignore
+!.gitattributes
+
+!code/
+!code/**
+
+!pipeline/
+!pipeline/**
+
+!pipelines/
+!pipelines/**
+
+!smpl_models/
+!smpl_models/**
+
+# Local runtime/cache artifacts inside tracked trees.
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.cache/
