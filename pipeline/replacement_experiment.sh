@@ -22,6 +22,8 @@ VAL_JSON="${VAL_JSON:-$ROOT/datasets/Val_sp120_by_motion.json}"
 TEST_JSON="${TEST_JSON:-$ROOT/datasets/Test_sp120_by_motion6.json}"
 GT_ROOT="${GT_ROOT:-$ROOT/datasets/GT_sequences}"
 SIM_ROOT="${SIM_ROOT:-$ROOT/datasets/Sim1_sequences}"
+SIM_TAG="${SIM_TAG:-sim1}"
+SIM_LABEL="${SIM_LABEL:-Sim1}"
 CACHE_ROOT="${CACHE_ROOT:-/ssdtemp/users/quansj/rtpose_cache_local}"
 CACHE_DIR="${CACHE_DIR:-npy_DZYX_mag_roi_f16_norm}"
 
@@ -38,6 +40,11 @@ TOTAL_EPOCHS="${TOTAL_EPOCHS:-20}"
 GPUS="${GPUS:-0,1,2}"
 NPROC="${NPROC:-3}"
 COPY_JOBS="${COPY_JOBS:-8}"
+COPY_MODE="${COPY_MODE:-delta}"
+SSD_SETTLE_SYNC="${SSD_SETTLE_SYNC:-1}"
+SSD_SETTLE_SECONDS="${SSD_SETTLE_SECONDS:-60}"
+COPY_FSYNC_EACH="${COPY_FSYNC_EACH:-0}"
+COPY_FADVISE_DONTNEED="${COPY_FADVISE_DONTNEED:-0}"
 
 PLAN_ONLY="${PLAN_ONLY:-0}"
 PREPARE_GT_CACHE="${PREPARE_GT_CACHE:-1}"
@@ -76,6 +83,7 @@ copy_manifest() {
   fi
   "$PY" - "$manifest" "$COPY_JOBS" "$copied_log" <<'PY'
 import concurrent.futures
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -83,6 +91,8 @@ from pathlib import Path
 manifest = Path(sys.argv[1])
 workers = int(sys.argv[2])
 copied_log = Path(sys.argv[3])
+fsync_each = os.environ.get("COPY_FSYNC_EACH", "0") == "1"
+fadvise_dontneed = os.environ.get("COPY_FADVISE_DONTNEED", "0") == "1"
 
 pairs = []
 with manifest.open("r", encoding="utf-8") as f:
@@ -99,6 +109,15 @@ def copy_one(pair):
         raise FileNotFoundError(src)
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
+    if fsync_each or fadvise_dontneed:
+        with dst.open("rb") as handle:
+            if fsync_each:
+                os.fdatasync(handle.fileno())
+            if fadvise_dontneed and hasattr(os, "posix_fadvise"):
+                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+    if fadvise_dontneed and hasattr(os, "posix_fadvise"):
+        with src.open("rb") as handle:
+            os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
     return str(dst)
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
@@ -107,6 +126,18 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
             out.write(dst + "\n")
 print(f"copied {len(pairs)} files from {manifest}")
 PY
+}
+
+settle_ssd_cache() {
+  local label="$1"
+  if [[ "$SSD_SETTLE_SYNC" == "1" ]]; then
+    log "syncing dirty pages after $label"
+    sync
+  fi
+  if [[ "${SSD_SETTLE_SECONDS:-0}" -gt 0 ]]; then
+    log "settling SSD/cache for ${SSD_SETTLE_SECONDS}s after $label"
+    sleep "$SSD_SETTLE_SECONDS"
+  fi
 }
 
 verify_manifest() {
@@ -151,7 +182,7 @@ write_plan() {
   "$PY" - \
     "$TRAIN_JSON" "$VAL_JSON" "$TEST_JSON" \
     "$GT_ROOT" "$SIM_ROOT" "$CACHE_ROOT" "$CACHE_DIR" \
-    "$PLAN_DIR" "$SEED" "$REPLACE_BY" "$RATIOS" "$need_replacement" <<'PY'
+    "$PLAN_DIR" "$SEED" "$REPLACE_BY" "$RATIOS" "$need_replacement" "$SIM_TAG" "$SIM_LABEL" <<'PY'
 import json
 import math
 import random
@@ -166,6 +197,8 @@ seed = int(sys.argv[9])
 replace_by = sys.argv[10].lower()
 ratios = [int(item) for item in sys.argv[11].replace(",", " ").split()]
 need_replacement = bool(int(sys.argv[12]))
+sim_tag = sys.argv[13]
+sim_label = sys.argv[14]
 
 if replace_by not in {"sequence", "frame"}:
     raise SystemExit("-- REPLACE_BY must be sequence or frame")
@@ -234,12 +267,12 @@ if replace_by == "sequence":
         if not all(sim_src(seq, radar_id).exists() for radar_id in seq_keys):
             missing_units.append(seq)
     if missing_units and need_replacement:
-        raise SystemExit("Missing complete Sim1 ROI cache for train sequences:\n" + " ".join(missing_units))
+        raise SystemExit(f"Missing complete {sim_label} ROI cache for train sequences:\n" + " ".join(missing_units))
 else:
     units = sorted(train_keys, key=lambda item: (int(item[0]), int(item[1])))
     missing_frames = [f"{seq}/{radar_id}" for seq, radar_id in units if not sim_src(seq, radar_id).exists()]
     if missing_frames and need_replacement:
-        raise SystemExit("Missing Sim1 ROI cache for train frames:\n" + "\n".join(missing_frames[:50]))
+        raise SystemExit(f"Missing {sim_label} ROI cache for train frames:\n" + "\n".join(missing_frames[:50]))
 
 rng = random.Random(seed)
 order = list(units)
@@ -257,13 +290,15 @@ plan = {
     "gt_union_frames": len(all_gt_keys),
     "num_units": len(units),
     "need_replacement": need_replacement,
+    "sim_tag": sim_tag,
+    "sim_label": sim_label,
 }
 if replace_by == "sequence":
     plan["unit_order"] = order
-    plan["missing_sim1_units"] = missing_units
+    plan[f"missing_{sim_tag}_units"] = missing_units
 else:
     plan["unit_order"] = [f"{seq}/{radar_id}" for seq, radar_id in order]
-    plan["missing_sim1_frames"] = missing_frames
+    plan[f"missing_{sim_tag}_frames"] = missing_frames
 
 if (replace_by == "sequence" and missing_units) or (replace_by == "frame" and missing_frames):
     (plan_dir / "missing_sim1.txt").write_text(
@@ -294,16 +329,26 @@ for ratio in ratios:
         selected_label = [f"{seq}/{radar_id}" for seq, radar_id in selected]
         delta_label = [f"{seq}/{radar_id}" for seq, radar_id in delta]
 
+    if replace_by == "sequence":
+        delta_sequences = set(delta)
+        delta_keys = [(seq, radar_id) for seq, radar_id in train_keys if seq in delta_sequences]
+    else:
+        delta_keys = delta
+
     pairs = [(sim_src(seq, radar_id), cache_dst(seq, radar_id)) for seq, radar_id in selected_keys]
-    write_manifest(plan_dir / f"sim1_p{ratio}_manifest.tsv", pairs)
-    (plan_dir / f"sim1_p{ratio}_selected_units.txt").write_text("\n".join(map(str, selected_label)) + "\n", encoding="utf-8")
-    (plan_dir / f"sim1_p{ratio}_delta_units.txt").write_text("\n".join(map(str, delta_label)) + "\n", encoding="utf-8")
+    delta_pairs = [(sim_src(seq, radar_id), cache_dst(seq, radar_id)) for seq, radar_id in delta_keys]
+    write_manifest(plan_dir / f"{sim_tag}_p{ratio}_manifest.tsv", pairs)
+    write_manifest(plan_dir / f"{sim_tag}_p{ratio}_delta_manifest.tsv", delta_pairs)
+    (plan_dir / f"{sim_tag}_p{ratio}_selected_units.txt").write_text("\n".join(map(str, selected_label)) + "\n", encoding="utf-8")
+    (plan_dir / f"{sim_tag}_p{ratio}_delta_units.txt").write_text("\n".join(map(str, delta_label)) + "\n", encoding="utf-8")
     plan["ratios"][str(ratio)] = {
         "ratio_percent": ratio,
         "num_selected_units": len(selected),
         "num_delta_units": len(delta),
         "num_replaced_train_frames": len(selected_keys),
-        "manifest": str(plan_dir / f"sim1_p{ratio}_manifest.tsv"),
+        "num_delta_replaced_train_frames": len(delta_keys),
+        "manifest": str(plan_dir / f"{sim_tag}_p{ratio}_manifest.tsv"),
+        "delta_manifest": str(plan_dir / f"{sim_tag}_p{ratio}_delta_manifest.tsv"),
     }
 
 (plan_dir / "replacement_plan.json").write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
@@ -332,6 +377,7 @@ prepare_gt_cache() {
   rm -rf "$CACHE_ROOT"
   mkdir -p "$CACHE_ROOT/sequences"
   copy_manifest "$PLAN_DIR/gt_union_manifest.tsv" "$PLAN_DIR/gt_union_copied_files.txt"
+  settle_ssd_cache "GT cache preparation"
   verify_manifest "$PLAN_DIR/gt_union_manifest.tsv"
 }
 
@@ -376,12 +422,22 @@ train_run() {
 
 replace_and_train() {
   local ratio="$1"
-  local tag="sim1_p${ratio}"
-  local manifest="$PLAN_DIR/sim1_p${ratio}_manifest.tsv"
-  local copied="$PLAN_DIR/sim1_p${ratio}_copied_files.txt"
-  log "applying Sim1 replacement p${ratio}"
+  local tag="${SIM_TAG}_p${ratio}"
+  local full_manifest="$PLAN_DIR/${SIM_TAG}_p${ratio}_manifest.tsv"
+  local delta_manifest="$PLAN_DIR/${SIM_TAG}_p${ratio}_delta_manifest.tsv"
+  local manifest="$full_manifest"
+  local copied="$PLAN_DIR/${SIM_TAG}_p${ratio}_copied_files.txt"
+  if [[ "$COPY_MODE" == "delta" && -f "$delta_manifest" ]]; then
+    manifest="$delta_manifest"
+    copied="$PLAN_DIR/${SIM_TAG}_p${ratio}_delta_copied_files.txt"
+  elif [[ "$COPY_MODE" != "full" && "$COPY_MODE" != "delta" ]]; then
+    echo "COPY_MODE must be full or delta, got: $COPY_MODE" >&2
+    exit 2
+  fi
+  log "applying ${SIM_LABEL} replacement p${ratio}"
   copy_manifest "$manifest" "$copied"
-  verify_manifest "$manifest"
+  settle_ssd_cache "${SIM_LABEL} replacement p${ratio}"
+  verify_manifest "$full_manifest"
   train_run "$tag"
 }
 

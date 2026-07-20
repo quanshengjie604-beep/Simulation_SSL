@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot a max-normalized Doppler spectrum time window for qualitative analysis."""
+"""Plot a normalized Doppler spectrum time window for qualitative analysis."""
 
 from __future__ import annotations
 
@@ -55,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         required=True,
         help="Radar_frameID represented by column 0 of the spectrum.",
+    )
+    parser.add_argument(
+        "--normalization",
+        choices=("max-db", "p10-p100"),
+        default="max-db",
+        help="Display normalization: relative max-normalized dB or log10(power + 1) p10-p100.",
     )
     parser.add_argument("--db-floor", type=float, default=-45.0, help="Minimum displayed relative power in dB.")
     parser.add_argument("--db-ceil", type=float, default=0.0, help="Maximum displayed relative power in dB.")
@@ -114,6 +120,19 @@ def max_normalized_db(spectrum: np.ndarray, floor_db: float, ceil_db: float) -> 
     return np.clip(db, float(floor_db), float(ceil_db)).astype(np.float32, copy=False)
 
 
+def percentile_normalized_log_power(spectrum: np.ndarray) -> tuple[np.ndarray, float, float]:
+    finite = np.isfinite(spectrum)
+    if not np.any(finite):
+        raise ValueError("Cannot normalize a spectrum without finite values")
+    log_power = np.log10(np.maximum(spectrum[finite].astype(np.float64), 0.0) + 1.0)
+    low, high = np.percentile(log_power, (10.0, 100.0))
+    if not np.isfinite(high) or high <= low:
+        raise ValueError(f"Invalid p10-p100 normalization range: low={low}, high={high}")
+    shown = np.zeros_like(spectrum, dtype=np.float32)
+    shown[finite] = ((log_power - low) / (high - low)).astype(np.float32)
+    return np.clip(shown, 0.0, 1.0), float(low), float(high)
+
+
 def default_out_path(sequence: str, start_time: float, stop_time: float) -> Path:
     safe_start = f"{start_time:.3f}".replace(".", "p").replace("-", "m")
     safe_stop = f"{stop_time:.3f}".replace(".", "p").replace("-", "m")
@@ -127,7 +146,7 @@ def default_out_path(sequence: str, start_time: float, stop_time: float) -> Path
 
 
 def plot_spectrum(
-    db_map: np.ndarray,
+    display_map: np.ndarray,
     frame_ids: np.ndarray,
     times: np.ndarray,
     sequence: str,
@@ -137,23 +156,32 @@ def plot_spectrum(
     frame_period = 1.0 / float(args.fps)
     x0 = float(times[0] - 0.5 * frame_period)
     x1 = float(times[-1] + 0.5 * frame_period)
-    if db_map.shape[1] == 1:
+    if display_map.shape[1] == 1:
         x0 = float(times[0] - 0.5 * frame_period)
         x1 = float(times[0] + 0.5 * frame_period)
 
+    if args.normalization == "p10-p100":
+        vmin, vmax = 0.0, 1.0
+        cbar_label = "Full-baseline-normalized log power"
+        cbar_ticks = np.linspace(0.0, 1.0, 6)
+    else:
+        vmin, vmax = float(args.db_floor), float(args.db_ceil)
+        cbar_label = "Relative Doppler power (dB, max-normalized)"
+        cbar_ticks = [float(args.db_floor), -30.0, -15.0, float(args.db_ceil)]
+
     fig, ax = plt.subplots(figsize=(args.width, args.height), dpi=args.dpi, constrained_layout=True)
     im = ax.imshow(
-        db_map,
+        display_map,
         origin="lower",
         aspect="auto",
         cmap=args.cmap,
-        vmin=float(args.db_floor),
-        vmax=float(args.db_ceil),
-        extent=(x0, x1, -0.5, db_map.shape[0] - 0.5),
+        vmin=vmin,
+        vmax=vmax,
+        extent=(x0, x1, -0.5, display_map.shape[0] - 0.5),
     )
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
-    cbar.set_label("Relative Doppler power (dB, max-normalized)")
-    cbar.set_ticks([float(args.db_floor), -30.0, -15.0, float(args.db_ceil)])
+    cbar.set_label(cbar_label)
+    cbar.set_ticks(cbar_ticks)
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Doppler bin")
@@ -162,7 +190,7 @@ def plot_spectrum(
         f"{times[0]:.3f}-{times[-1]:.3f}s | frames {int(frame_ids[0])}-{int(frame_ids[-1])}"
     )
     ax.set_xlim(x0, x1)
-    ax.set_ylim(-0.5, db_map.shape[0] - 0.5)
+    ax.set_ylim(-0.5, display_map.shape[0] - 0.5)
     ax.tick_params(labelsize=9)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,15 +210,20 @@ def main() -> None:
         args.start_time,
         args.stop_time,
     )
-    db_map = max_normalized_db(window, args.db_floor, args.db_ceil)
+    normalization_detail = ""
+    if args.normalization == "p10-p100":
+        display_map, low, high = percentile_normalized_log_power(window)
+        normalization_detail = f" log_p10={low:.6g} log_p100={high:.6g}"
+    else:
+        display_map = max_normalized_db(window, args.db_floor, args.db_ceil)
     out_path = Path(args.out).expanduser().resolve() if args.out else default_out_path(
         args.sequence,
         args.start_time,
         args.stop_time,
     )
-    plot_spectrum(db_map, window_frames, window_times, args.sequence, args, out_path)
+    plot_spectrum(display_map, window_frames, window_times, args.sequence, args, out_path)
     print(
-        f"wrote {out_path} shape={db_map.shape} "
+        f"wrote {out_path} shape={display_map.shape} normalization={args.normalization}{normalization_detail} "
         f"time={window_times[0]:.3f}..{window_times[-1]:.3f}s "
         f"frames={int(window_frames[0])}..{int(window_frames[-1])}"
     )

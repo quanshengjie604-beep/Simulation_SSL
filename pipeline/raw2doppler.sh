@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PY="${PY:-/home/quansj/miniforge3/envs/witwin/bin/python}"
+PY="${PY:-/bigdata/users/quansj/miniforge3/envs/witwin/bin/python}"
 TRAIN_JSON="${TRAIN_JSON:-$ROOT/datasets/Train_sp120_train_minus_val6.json}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs/raw2doppler_sp120}"
 
@@ -12,13 +12,14 @@ if [[ -z "$KIND" ]]; then
   exit 2
 fi
 
-GPU_IDS="${GPU_IDS:-0 1 2}"
+GPU_IDS="${GPU_IDS:-1}"
 BACKEND="${BACKEND:-torch}"
 WORKERS_PER_GPU="${WORKERS_PER_GPU:-1}"
 MAX_IN_FLIGHT="${MAX_IN_FLIGHT:-$WORKERS_PER_GPU}"
 RAW_FRAME_START="${RAW_FRAME_START:-1}"
 ROI_MARGIN="${ROI_MARGIN:-0.5}"
-ROI_REDUCER="${ROI_REDUCER:-mean}"
+ROI_REDUCER="${ROI_REDUCER:-topk-mean}"
+ROI_TOPK_FRACTION="${ROI_TOPK_FRACTION:-0.05}"
 OVERWRITE="${OVERWRITE:-0}"
 
 case "${KIND,,}" in
@@ -55,6 +56,12 @@ if ! [[ "$WORKERS_PER_GPU" =~ ^[0-9]+$ ]] || (( WORKERS_PER_GPU < 1 )); then
 fi
 if ! [[ "$MAX_IN_FLIGHT" =~ ^[0-9]+$ ]] || (( MAX_IN_FLIGHT < 1 )); then
   echo "MAX_IN_FLIGHT must be a positive integer; got '$MAX_IN_FLIGHT'" >&2
+  exit 2
+fi
+if [[ "$ROI_REDUCER" == "topk-mean" ]] && ! "$PY" -c \
+  'import sys; value = float(sys.argv[1]); sys.exit(0 if 0.0 < value <= 1.0 else 1)' \
+  "$ROI_TOPK_FRACTION"; then
+  echo "ROI_TOPK_FRACTION must be in (0, 1]; got '$ROI_TOPK_FRACTION'" >&2
   exit 2
 fi
 
@@ -125,13 +132,14 @@ run_slot() {
       --rangemat-correction "$RANGEMAT_CORRECTION" \
       --peakvalmat-correction "$PEAKVALMAT_CORRECTION" \
       --roi-reducer "$ROI_REDUCER" \
+      --roi-topk-fraction "$ROI_TOPK_FRACTION" \
       "${overwrite_arg[@]}" \
       > "$LOG_DIR/${LOG_PREFIX}_seq${seq}_raw2doppler.log" 2>&1
   done
   log "${LOG_PREFIX}: slot=$slot_index gpu=$gpu complete"
 }
 
-log "${LOG_PREFIX}: raw echo -> Doppler spectrum start dataset=$DATASET_DIR out=$OUT_DIR gpus=${GPUS[*]} corrections=$RANGEMAT_CORRECTION/$PEAKVALMAT_CORRECTION"
+log "${LOG_PREFIX}: raw echo -> Doppler spectrum start dataset=$DATASET_DIR out=$OUT_DIR gpus=${GPUS[*]} corrections=$RANGEMAT_CORRECTION/$PEAKVALMAT_CORRECTION roi=$ROI_REDUCER/$ROI_TOPK_FRACTION"
 pids=()
 for slot_index in "${!GPUS[@]}"; do
   run_slot "$slot_index" "${GPUS[$slot_index]}" &

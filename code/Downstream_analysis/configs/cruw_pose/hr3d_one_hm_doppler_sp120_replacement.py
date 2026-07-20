@@ -12,6 +12,13 @@ DATASET['DIR']['RDR_CACHE_ROOT'] = os.environ.get(
     '/ssdtemp/users/quansj/rtpose_cache_local',
 )
 
+if 'RTPOSE_WORKERS_PER_GPU' in os.environ:
+    data['workers_per_gpu'] = int(os.environ['RTPOSE_WORKERS_PER_GPU'])
+if 'RTPOSE_PREFETCH_FACTOR' in os.environ:
+    data['prefetch_factor'] = int(os.environ['RTPOSE_PREFETCH_FACTOR'])
+if 'RTPOSE_TEST_WORKERS_PER_GPU' in os.environ:
+    test_workers_per_gpu = int(os.environ['RTPOSE_TEST_WORKERS_PER_GPU'])
+
 total_epochs = int(os.environ.get('RTPOSE_TOTAL_EPOCHS', '20'))
 eval_epoch_interval = 1
 val_eval_epoch_interval = 0

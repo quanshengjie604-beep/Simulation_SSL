@@ -8,7 +8,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning, NumbaWarning
 import warnings
@@ -68,6 +68,10 @@ def parse_args():
 
     return args
 
+def get_dist_timeout():
+    timeout_seconds = int(os.environ.get("RTPOSE_DIST_TIMEOUT_SECONDS", os.environ.get("NCCL_TIMEOUT", "3600")))
+    return timedelta(seconds=timeout_seconds)
+
 
 def main():
 
@@ -96,7 +100,7 @@ def main():
     if distributed:
         if args.launcher == "pytorch":
             torch.cuda.set_device(args.local_rank)
-            torch.distributed.init_process_group(backend="nccl", init_method="env://")
+            torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=get_dist_timeout())
             cfg.local_rank = args.local_rank
         elif args.launcher == "slurm":
             proc_id = int(os.environ["SLURM_PROCID"])
@@ -123,7 +127,7 @@ def main():
             os.environ["LOCAL_RANK"] = str(proc_id % num_gpus)
             os.environ["RANK"] = str(proc_id)
 
-            dist.init_process_group(backend="nccl")
+            dist.init_process_group(backend="nccl", timeout=get_dist_timeout())
             cfg.local_rank = int(os.environ["LOCAL_RANK"])
 
         cfg.gpus = dist.get_world_size()
