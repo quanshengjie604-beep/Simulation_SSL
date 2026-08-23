@@ -1,0 +1,42 @@
+# Hydra config used by eval.py to re-evaluate finished classifier ckpts
+# (supervised, MAE-fine-tuned, or contrastive-fine-tuned). method_name must
+# match the trained checkpoint. The MAE and contrastive *tuning* entry
+# points (ssl_eval/mae_tune.py and ssl_eval/contrastive_tune.py) read
+# conf/train.yaml instead.
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
+
+### Required fields
+
+# Task / method selection. task_name selects classification (MotionState,
+# SingleHand) vs regression (VelocityRegression); see utils/constants.py:REGRESSION_TASKS.
+# Must match the trained checkpoint.
+task_name: MotionState             # MotionState | SingleHand | VelocityRegression
+method_name: supervised            # supervised | contrastive | reconstruction
+
+# Top-level paths shared by all flows.
+output_dir: output/eval/
+data_dir:   data/labeled_tracks_Doppler/
+ssl_ckpts_dir: data/checkpoints/ssl_pretraining/
+ckpts_dir: data/checkpoints/
+
+model_name: mobilenet_v2           # mobilenet_v2 | resnet18
+
+cross_location: false
+
+### Optional fields 
+# override folder for per-fold classifier ckpts.
+eval_checkpoint_dir:
+
+paths:
+  # Optional explicit checkpoint path for SSL eval. If unset, derived as
+  # "<ssl_ckpts_dir>/<method_name>_<model_name>_epoch300.pt".
+  ckpt:
+
+data:
+  use_cache: false
+
+

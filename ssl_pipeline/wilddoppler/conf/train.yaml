@@ -1,0 +1,39 @@
+hydra:
+  run:
+    dir: .
+
+### Required fields
+
+# Task / method selection.
+# task_name selects classification (MotionState, SingleHand) vs regression
+# (VelocityRegression); see utils/constants.py:REGRESSION_TASKS.
+# method_name is set in code by each entry-point script; the value here is a fallback default.
+task_name: MotionState             # MotionState | SingleHand | VelocityRegression
+method_name: supervised            # supervised | contrastive | reconstruction
+
+# Top-level paths shared by all flows.
+output_dir: output/train/
+data_dir:   data/labeled_tracks_Doppler/
+ssl_ckpts_dir: data/checkpoints/ssl_pretraining/
+
+model_name: mobilenet_v2           # mobilenet_v2 | resnet18
+
+cross_location: False
+
+### Optional fields
+
+paths:
+  # Optional: explicit checkpoint path overrides the auto-derived
+  # "<ssl_ckpts_dir>/<method_name>_<model_name>_epoch300.pt".
+  ckpt:
+
+train:
+  # Leave both null to use the tuned defaults from utils/constants.py
+  # (HYPERPARAM_DEFAULTS, keyed by task_name x method_name x cross_location_cv).
+  learning_rate:
+  epochs:
+
+train_percent: 100
+
+data:
+  use_cache: false

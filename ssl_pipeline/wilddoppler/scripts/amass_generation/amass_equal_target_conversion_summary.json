@@ -1,0 +1,30 @@
+{
+  "amass_rows": 2128,
+  "mixed_rows": 4365,
+  "amass_split_counts": {
+    "train": 1998,
+    "val": 130
+  },
+  "mixed_split_counts": {
+    "train": 4034,
+    "val": 331
+  },
+  "train_windows": {
+    "dw": 22253,
+    "amass": 22258
+  },
+  "val_windows": {
+    "dw": 1360,
+    "amass": 845
+  },
+  "amass_sample_stats_mean_std_p1_p99": [
+    16.983953914642335,
+    9.312097947597504,
+    1.497757922410965,
+    43.95169858932495
+  ],
+  "amass_out_dir": "/bigdata/users/quansj/datasets/Doppler/wilddoppler/DopplerWild_repo/data/amass_equal_target_tracks_Doppler",
+  "mixed_out_dir": "/bigdata/users/quansj/datasets/Doppler/wilddoppler/DopplerWild_repo/data/a5_mixed_unlabeled_tracks_Doppler",
+  "amass_tracklist": "/bigdata/users/quansj/datasets/Doppler/wilddoppler/DopplerWild_repo/data/fold_splits/AMASS_equal_target_tracklist.csv",
+  "mixed_tracklist": "/bigdata/users/quansj/datasets/Doppler/wilddoppler/DopplerWild_repo/data/fold_splits/DopplerWild_AMASS_equal_mixed_tracklist.csv"
+}

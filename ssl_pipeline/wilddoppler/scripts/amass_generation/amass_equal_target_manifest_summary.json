@@ -1,0 +1,15 @@
+{
+  "amass_root": "/bigdata/users/quansj/datasets/Doppler/wilddoppler/legacy/datasets/AMASS_SMPLX_2022",
+  "manifest_csv": "/bigdata/users/quansj/datasets/Doppler/wilddoppler/DopplerWild_repo/scripts/amass_generation/amass_equal_target_manifest.csv",
+  "target_windows": 23613,
+  "selected_rows": 2128,
+  "valid_single_view_motions": 1863,
+  "added_view1_motions": 265,
+  "skipped_files": 1,
+  "estimated_windows": 23629,
+  "estimated_hours_single_view": 2.8988703703703704,
+  "estimated_hours_selected": 3.713814814814817,
+  "bins_per_second": 90,
+  "crop_seconds": 1.0,
+  "overlap": 0.5
+}
