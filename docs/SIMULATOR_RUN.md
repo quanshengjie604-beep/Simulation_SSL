@@ -28,7 +28,24 @@ files, `__pycache__`, and local backup files are intentionally ignored.
 ## Environment
 
 Use a Python environment with CUDA-capable PyTorch and the packages listed in
-`requirements.txt`. The tested local interpreter is:
+`requirements.txt`.
+
+Fresh clone setup:
+
+```bash
+git clone git@github.com:quanshengjie604-beep/Simulation_SSL.git
+cd Simulation_SSL
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+
+# Install the CUDA PyTorch build that matches the host driver/toolkit first.
+# Then install the repository runtime dependencies.
+python -m pip install -r requirements.txt
+```
+
+The tested local interpreter on the development server is:
 
 ```bash
 /bigdata/users/quansj/miniforge3/envs/witwin/bin/python
@@ -48,6 +65,36 @@ Keep compiler caches on writable local storage:
 export WITWIN_CACHE_DIR=/tmp/witwin-cache
 export XDG_CACHE_HOME=$WITWIN_CACHE_DIR
 export DRJIT_CACHE_DIR=$WITWIN_CACHE_DIR
+```
+
+Required external data and model files are not shipped in Git:
+
+```text
+datasets/AMASS_SMPLX_2022/       # AMASS SMPL-X motion files
+smpl_models/                     # SMPL/SMPL-X model files accepted by smplx
+results/                         # generated outputs and mesh cache
+```
+
+Before a full run, check the repository and Python environment:
+
+```bash
+test -f witwin/radar/solvers/radar.slang
+test -f witwin/radar/solvers/dirichlet.slang
+test -f witwin/core/mesh_sdf.slang
+
+python -m py_compile \
+  code/smpl_mesh_to_micro_doppler.py \
+  ssl_pipeline/wilddoppler/code/smpl_mesh_to_micro_doppler.py
+
+python - <<'PY'
+import torch
+import slangtorch
+import smplx
+import drjit
+import mitsuba
+print("torch:", torch.__version__, "cuda:", torch.cuda.is_available())
+print("slangtorch import ok")
+PY
 ```
 
 ## Minimal AMASS Simulation
