@@ -33,6 +33,8 @@ Use a Python environment with CUDA-capable PyTorch and the packages listed in
 Fresh clone setup:
 
 ```bash
+# Recommended when Git LFS is available.
+git lfs install
 git clone git@github.com:quanshengjie604-beep/Simulation_SSL.git
 cd Simulation_SSL
 
@@ -43,6 +45,17 @@ python -m pip install --upgrade pip
 # Install the CUDA PyTorch build that matches the host driver/toolkit first.
 # Then install the repository runtime dependencies.
 python -m pip install -r requirements.txt
+```
+
+If the host does not have `git-lfs`, clone the source tree without resolving
+LFS objects:
+
+```bash
+git -c filter.lfs.required=false \
+  -c filter.lfs.smudge= \
+  -c filter.lfs.process= \
+  clone git@github.com:quanshengjie604-beep/Simulation_SSL.git
+cd Simulation_SSL
 ```
 
 The tested local interpreter on the development server is:
