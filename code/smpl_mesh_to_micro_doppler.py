@@ -9,6 +9,7 @@ import json
 import math
 import os
 import sys
+import sysconfig
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -167,6 +168,11 @@ def resolve_witwin_radar_dir() -> Path:
     candidates = []
     if os.environ.get("WITWIN_RADAR_DIR"):
         candidates.append(Path(os.environ["WITWIN_RADAR_DIR"]))
+    candidates.append(REPO_ROOT / "witwin/radar")
+    for key in ("purelib", "platlib"):
+        site_dir = sysconfig.get_paths().get(key)
+        if site_dir:
+            candidates.append(Path(site_dir) / "witwin/radar")
     candidates.extend(
         [
             Path(sys.prefix) / "lib/python3.11/site-packages/witwin/radar",
@@ -187,8 +193,12 @@ def bootstrap_witwin_modules():
     os.environ.setdefault("DRJIT_CACHE_DIR", str(cache))
     os.environ.setdefault("MPLCONFIGDIR", str(cache / "matplotlib"))
 
+    radar_dir = resolve_witwin_radar_dir()
+    witwin_root = radar_dir.parents[1]
+    if str(witwin_root) not in sys.path:
+        sys.path.insert(0, str(witwin_root))
     package = types.ModuleType("witwin.radar")
-    package.__path__ = [str(resolve_witwin_radar_dir())]
+    package.__path__ = [str(radar_dir)]
     sys.modules.setdefault("witwin.radar", package)
     from witwin.radar.radar import Radar, RadarConfig
     from witwin.radar.scene import Scene

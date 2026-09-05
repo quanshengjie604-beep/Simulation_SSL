@@ -1,0 +1,9 @@
+drjit
+matplotlib
+mitsuba
+numpy
+opencv-python
+slangtorch
+smplx
+torch
+tqdm

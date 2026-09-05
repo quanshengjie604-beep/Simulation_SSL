@@ -3,6 +3,11 @@
 
 !.gitignore
 !.gitattributes
+!README.md
+!requirements.txt
+
+!docs/
+!docs/**
 
 !code/
 !code/**
@@ -16,8 +21,14 @@
 !smpl_models/
 !smpl_models/**
 
+!witwin/
+!witwin/**
+
 # Local runtime/cache artifacts inside tracked trees.
 **/__pycache__/
 **/*.py[cod]
 **/.pytest_cache/
 **/.cache/
+**/.slangtorch_cache/
+**/*.lock
+**/*.bak

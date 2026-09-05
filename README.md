@@ -14,6 +14,9 @@ This repository contains two connected pieces:
 Large datasets, generated results, caches, checkpoints, and SMPL-X model files
 are intentionally not committed.
 
+For simulator setup, Slang kernel locations, and example commands, see
+[`docs/SIMULATOR_RUN.md`](docs/SIMULATOR_RUN.md).
+
 ## Repository Layout
 
 ```text
